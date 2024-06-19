@@ -1,0 +1,8 @@
+/target
+datos.csv
+out.csv
+output.csv
+prueba.sql
+/migrations
+.env
+

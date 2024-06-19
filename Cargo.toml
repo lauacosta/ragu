@@ -1,0 +1,17 @@
+[package]
+name = "raiduki"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0.86"
+chrono = "0.4.38"
+colored = "2.1.0"
+dotenvy = "0.15.7"
+polars = { version = "0.40.0", features = ["csv", "json", "lazy", "polars-io"] }
+reqwest = { version = "0.12.5", features = ["json"] }
+serde = { version = "1.0.203", features = ["derive"] }
+sqlx = { version = "0.7.4", features = ["macros", "migrate", "postgres", "runtime-tokio"] }
+tokio = { version = "1.38.0", features = ["full"] }
+pgvector = { version = "0.3", features = ["sqlx"] }
+clap = { version = "4.5.7", features = ["derive"] }
