@@ -1,7 +1,9 @@
+use anyhow::bail;
 use clap::Subcommand;
 use clap::{Args, Parser};
-use raiduki::{generar_embedded_csv, realizar_consulta};
+use pgvector::Vector;
 use std::path::PathBuf;
+use tracing::{error, info, span, Level};
 
 #[derive(Parser)]
 #[clap(
@@ -22,6 +24,12 @@ enum Commands {
 
     #[clap(name = "load", about = "Cargar un documento .csv a la base de datos.")]
     Load(LoadArgs),
+
+    #[clap(
+        name = "export_to_csv",
+        about = "Genera embeddings a partir de un archivo .csv y los exporta a otro .csv."
+    )]
+    Csv(CsvArgs),
 }
 
 #[derive(Args)]
@@ -36,28 +44,46 @@ struct AskArgs {
 
 #[derive(Args)]
 struct LoadArgs {
-    #[clap(help = "origen es el archivo a almacenar.")]
+    #[clap(help = "archivo fuente.")]
     #[arg(short, long)]
-    origen: String,
-    #[clap(help = "destino es el archivo en donde se almancenará el resultado.")]
+    origen: PathBuf,
+}
+
+#[derive(Args)]
+struct CsvArgs {
+    #[clap(help = "archivo fuente.")]
     #[arg(short, long)]
-    destino: String,
+    origen: PathBuf,
+    #[clap(help = "donde se almancenará el resultado.")]
+    #[arg(short, long)]
+    destino: PathBuf,
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    let pool = raiduki::conectar_con_bd().await?;
+    sqlx::migrate!("./migrations").run(&pool).await?;
+
+    tracing_subscriber::fmt::init();
+    let span = span!(Level::INFO, "raiduki");
+    let _guard = span.enter();
+
     let cli = Cli::parse();
 
     match &cli.command {
         Commands::Ask(args) => {
-            realizar_consulta(&args.consulta).await?;
+            raiduki::semantic_search(&args.consulta, &pool).await?;
         }
         Commands::Load(args) => {
-            generar_embedded_csv(
-                &PathBuf::from(args.origen.clone()),
-                &PathBuf::from(args.destino.clone()),
-            )
-            .await?;
+            let (data, embeddings) = raiduki::vectorize_csv(&args.origen).await?;
+            if let Err(err)  = sqlx::query!("INSERT INTO datos_usuarios (data, embedding) SELECT * FROM UNNEST($1::text[], $2::vector[])", &data[..], &embeddings[..] as &[Vector]).execute(&pool).await {
+                error!("{}",err.to_string());
+                bail!(err);
+            };
+            info!("Se han cargado los datos exitosamente!");
+        }
+        Commands::Csv(args) => {
+            todo!()
         }
     }
     Ok(())

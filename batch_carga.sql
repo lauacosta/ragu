@@ -1,1 +1,0 @@
-\copy usuarios (nombre,correo,nombre_completo,genero,fecha_nacimiento,edad,ciudad,provincia,descrip,estudio_id,area_estudio,experiencia,estudios_recientes,embedding) from '~/personal/code/cloud/raiduki/output.csv' DELIMITER ',' CSV HEADER;

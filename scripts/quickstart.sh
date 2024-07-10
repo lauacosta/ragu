@@ -33,7 +33,7 @@ fi
 
 export PGPASSWORD="${DB_PASSWORD}"
 until psql -h "localhost" -U "${DB_USER}" -p "${DB_PORT}" -d "postgres" -c '\q'; do
->&2 echo "Postgres se encuentra indisponible - durmiendo"
+>&2 echo "Postgres no se encuentra disponible - durmiendo"
 sleep 1
 done
 >&2 echo "Postgres está sirviendo en el puerto ${DB_PORT} - ejecutando las migraciones!"
