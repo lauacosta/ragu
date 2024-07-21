@@ -1,10 +1,9 @@
-use colored::Colorize;
 use pgvector::Vector;
 use reqwest::header::AUTHORIZATION;
 use reqwest::Client;
 use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
 use std::path::Path;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, instrument, warn};
 
 pub async fn conectar_con_bd() -> anyhow::Result<Pool<Postgres>> {
     dotenvy::dotenv()?;
@@ -32,7 +31,41 @@ struct HFResponse {
     output: Vec<Vec<f32>>,
 }
 
-pub async fn embed_query(model_id: &String, input: &String) -> anyhow::Result<Vec<f32>> {
+#[derive(serde::Serialize, serde::Deserialize, Debug)]
+pub struct OllamaGenerateRequest {
+    pub model: String,
+    pub prompt: String,
+    pub stream: Option<bool>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Debug)]
+pub struct OllamaEmbeddingRequest {
+    pub model: String,
+    pub prompt: Vec<String>,
+    pub stream: Option<bool>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Debug)]
+pub struct OllamaGenerateResponse {
+    pub model: String,
+    pub created_at: String,
+    pub response: String,
+    pub done: bool,
+    pub context: Vec<i32>,
+    pub total_duration: u64,
+    pub load_duration: u64,
+    pub prompt_eval_count: u64,
+    pub prompt_eval_duration: u64,
+    pub eval_count: u64,
+    pub eval_duration: u64,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Debug)]
+pub struct OllamaEmbeddingResponse {
+    pub embedding: Vec<Vec<f32>>,
+}
+
+pub async fn embed_query(model_id: &str, input: &str) -> anyhow::Result<Vec<f32>> {
     dotenvy::dotenv()?;
     let hf_token = std::env::var("HF_TOKEN").expect("No se pudo encontrar la variable 'HF_TOKEN'");
     let authorization_token = format!("Bearer {hf_token}");
@@ -82,7 +115,13 @@ async fn request_embeddings(
         .send()
         .await?;
 
-    assert!(res.status().is_success());
+    if res.status().is_success() {
+        info!("Status {:?}, Request exitoso!", res.status());
+    } else if res.status().is_server_error() {
+        error!("Status: {:?}, Server error!", res.status());
+    } else {
+        warn!("Status: {:?}", res.status());
+    }
 
     let res: HFResponse = match res.json().await {
         Ok(output) => HFResponse { output },
@@ -114,6 +153,7 @@ pub async fn gen_embeddings(model_id: &str, input: &[String]) -> anyhow::Result<
                     wait_for_model: true,
                 },
             };
+
             let response = request_embeddings(&hf_token, &api_url, &client, request_body).await?;
             let aux: Vec<Vector> = response.output.into_iter().map(Vector::from).collect();
             resulting_embeddings.extend_from_slice(&aux);
@@ -150,7 +190,10 @@ pub fn read_from_csv<P: AsRef<Path>>(path: P) -> anyhow::Result<Vec<String>> {
     let mut resultado = vec![];
     for r in reader.records() {
         let valor = r?;
-        let req: Vec<String> = valor.into_iter().map(|str| str.to_string()).collect();
+        let req: Vec<String> = valor
+            .into_iter()
+            .map(std::string::ToString::to_string)
+            .collect();
         let string = req.join(", ");
         resultado.push(string);
     }
@@ -176,24 +219,68 @@ pub struct Row {
     puntaje: Option<f64>,
 }
 
-pub async fn semantic_search(query: &String, pool: &Pool<Postgres>) -> anyhow::Result<()> {
+#[instrument]
+pub async fn semantic_search(
+    query: &str,
+    context: Option<&str>,
+    pool: &Pool<Postgres>,
+) -> anyhow::Result<()> {
     let model_id = "sentence-transformers/all-MiniLM-L6-v2";
-    let embedded_query = Vector::from(embed_query(&model_id.to_string(), query).await?);
 
-    // sqlx::query("CREATE EXTENSION IF NOT EXISTS vector")
-    //     .execute(pool)
-    //     .await?;
+    let embedded_query = if context.is_some() {
+        Vector::from(embed_query(model_id, context.unwrap()).await?)
+    } else {
+        Vector::from(embed_query(model_id, query).await?)
+    };
 
-    let result = sqlx::query_as!(
+    info!("Realizando la consulta a la base de datos...");
+    let result: Vec<Row> = sqlx::query_as!(
         Row,
-        "SELECT data, 1 - (embedding <=> $1) AS puntaje FROM datos_usuarios ORDER BY puntaje DESC",
+        "SELECT data, 1 - (embedding <=> $1) AS puntaje
+         FROM datos_usuarios
+         WHERE 1 - (embedding <=> $1) > 0.4
+         ORDER BY puntaje DESC",
         embedded_query as Vector
     )
     .fetch_all(pool)
     .await?;
 
+    let cantidad = result.len();
+    println!("{}", cantidad);
+    info!(resultados = cantidad, "Consulta realizada!");
+
     let json = serde_json::to_string_pretty(&result)?;
-    println!("{}", json);
+    // println!("{}", json);
+
+    let request_body = OllamaGenerateRequest {
+        model: "phi3".to_string(),
+        prompt: format!("Using this JSON data: {json}. Respond to this prompt: {query}"),
+        stream: Some(false),
+    };
+    info!("Enviando POST request a 'http://localhost:11434/api/generate'");
+    let client = Client::new();
+    let res = client
+        .post("http://localhost:11434/api/generate")
+        .json(&request_body)
+        .send()
+        .await?;
+
+    if res.status().is_success() {
+        info!("Status {:?}, Request exitoso!", res.status());
+    } else if res.status().is_server_error() {
+        error!("Status: {:?}, Server error!", res.status());
+    } else {
+        warn!("Status: {:?}", res.status());
+    }
+
+    let res: OllamaGenerateResponse = res.json().await?;
+
+    println!("Query: {}", query);
+    println!(
+        "Duración total para la respuesta: {} s",
+        std::time::Duration::from_nanos(res.total_duration).as_secs()
+    );
+    println!("Respuesta: \n {}", res.response);
 
     Ok(())
 }

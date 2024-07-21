@@ -5,4 +5,5 @@ output.csv
 prueba.sql
 /migrations
 .env
+/env
 
