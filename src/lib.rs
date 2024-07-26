@@ -32,7 +32,7 @@ struct HFResponse {
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
-pub struct OllamaGenerateRequest {
+pub struct OllamaRequest {
     pub model: String,
     pub prompt: String,
     pub stream: Option<bool>,
@@ -46,7 +46,7 @@ pub struct OllamaEmbeddingRequest {
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
-pub struct OllamaGenerateResponse {
+pub struct OllamaResponse {
     pub model: String,
     pub created_at: String,
     pub response: String,
@@ -215,7 +215,7 @@ pub async fn vectorize_csv<P: AsRef<Path>>(path: P) -> anyhow::Result<(Vec<Strin
 
 #[derive(sqlx::FromRow, Debug, serde::Serialize)]
 pub struct Row {
-    data: String,
+    data: Option<String>,
     puntaje: Option<f64>,
 }
 
@@ -250,10 +250,10 @@ pub async fn semantic_search(
     info!(resultados = cantidad, "Consulta realizada!");
 
     let json = serde_json::to_string_pretty(&result)?;
-    // println!("{}", json);
+    println!("{}", json);
 
-    let request_body = OllamaGenerateRequest {
-        model: "phi3".to_string(),
+    let request_body = OllamaRequest {
+        model: "llama3.1".to_string(),
         prompt: format!("Using this JSON data: {json}. Respond to this prompt: {query}"),
         stream: Some(false),
     };
@@ -273,7 +273,7 @@ pub async fn semantic_search(
         warn!("Status: {:?}", res.status());
     }
 
-    let res: OllamaGenerateResponse = res.json().await?;
+    let res: OllamaResponse = res.json().await?;
 
     println!("Query: {}", query);
     println!(

@@ -2,8 +2,6 @@ use anyhow::bail;
 use clap::Subcommand;
 use clap::{Args, Parser};
 use pgvector::Vector;
-use pyo3::prelude::*;
-use pyo3::types::{IntoPyDict, PyList};
 use std::path::PathBuf;
 use tracing::{error, info, span, Instrument, Level};
 
@@ -54,14 +52,14 @@ struct AskArgs {
 struct LoadArgs {
     #[clap(help = "archivo fuente.")]
     #[arg(short, long)]
-    origen: PathBuf,
+    file: PathBuf,
 }
 
 #[derive(Args)]
 struct CsvArgs {
     #[clap(help = "archivo fuente.")]
     #[arg(short, long)]
-    origen: PathBuf,
+    file: PathBuf,
     #[clap(help = "donde se almancenará el resultado.")]
     #[arg(short, long)]
     destino: PathBuf,
@@ -88,7 +86,7 @@ async fn main() -> anyhow::Result<()> {
             }
         }
         Commands::Load(args) => {
-            let (data, embeddings) = ragu::vectorize_csv(&args.origen).await?;
+            let (data, embeddings) = ragu::vectorize_csv(&args.file).await?;
             if let Err(err)  = sqlx::query!("INSERT INTO datos_usuarios (data, embedding) SELECT * FROM UNNEST($1::text[], $2::vector[])", &data[..], &embeddings[..] as &[Vector]).execute(&pool).in_current_span().await {
                 error!("{}",err.to_string());
                 bail!(err);
@@ -96,30 +94,11 @@ async fn main() -> anyhow::Result<()> {
             info!("Se han cargado los datos exitosamente!");
         }
         Commands::Csv(args) => {
-            Python::with_gil(|py| {
-                let sys = py.import_bound("sys").unwrap();
-                let version: String = sys.getattr("version").unwrap().extract().unwrap();
+            // let candle_embed = CandleEmbedBuilder::new().build()?;
 
-                let locals = [("os", py.import_bound("os").unwrap())].into_py_dict_bound(py);
-                let user: String = py
-                    .eval_bound(
-                        "os.getenv('USER') or os.getenv('USERNAME') or 'Unknown'",
-                        None,
-                        Some(&locals),
-                    )
-                    .unwrap()
-                    .extract()
-                    .unwrap();
+            // let embeddings = candle_embed.embed_one(&args.consulta)?;
 
-                println!("Hello {}, I'm Python {}", user, version);
-
-                let list: Vec<u64> = py
-                    .eval_bound("[i * 99 for i in range(10)]", None, None)
-                    .unwrap()
-                    .extract()
-                    .unwrap();
-                dbg!("{:?}", list);
-            });
+            // dbg!("{}", embeddings);
         }
     };
     Ok(())

@@ -10,20 +10,14 @@ colored = "2.1.0"
 dotenvy = "0.15.7"
 reqwest = { version = "0.12.5", features = ["json"] }
 serde = { version = "1.0.203", features = ["derive"] }
-sqlx = { version = "0.7.4", features = ["macros", "migrate", "postgres", "runtime-tokio"] }
+sqlx = { version = "0.7.3", features = ["macros", "migrate", "postgres", "runtime-tokio"] }
 tokio = { version = "1.38.0", features = ["full"] }
 pgvector = { version = "0.3", features = ["sqlx"] }
 clap = { version = "4.5.7", features = ["derive"] }
-tempfile = "3.10.1"
 tokio-postgres = "0.7.10"
 serde_json = "1.0.117"
 csv = "1.3.0"
 tracing = "0.1.40"
 tracing-subscriber = "0.3.18"
-candle-core = { git = "https://github.com/huggingface/candle.git", version = "0.6.0" }
-candle-onnx = { git = "https://github.com/huggingface/candle.git", version = "0.6.0" }
-tokenizers = "0.19.1"
+# candle_embed = "*"
 
-[dependencies.pyo3]
-version = "0.22.2"
-features = ["auto-initialize"]
